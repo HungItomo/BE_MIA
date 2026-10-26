@@ -263,7 +263,9 @@ app.get('/api/health', async (_req, res, next) => {
       database: 'disconnected',
       message: process.env.NODE_ENV === 'development'
         ? databaseError?.message || 'Đang kết nối PostgreSQL.'
-        : 'Đang kết nối PostgreSQL.',
+        : databaseError?.code
+          ? `PostgreSQL chưa sẵn sàng (${databaseError.code}).`
+          : 'Đang kết nối PostgreSQL.',
     });
   }
 
@@ -273,6 +275,13 @@ app.get('/api/health', async (_req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health' || databaseReady) return next();
+  return res.status(503).json({
+    message: 'PostgreSQL chưa sẵn sàng. Kiểm tra DATABASE_URL hoặc nhóm biến DB_* trên Render.',
+  });
 });
 
 app.get('/api/entries', async (req, res, next) => {
@@ -543,9 +552,12 @@ app.use((_req, res) => {
 });
 
 app.use((error, _req, res, _next) => {
-  console.error(error.message);
-  res.status(error.message === 'Origin không được phép truy cập API.' ? 403 : 500).json({
-    message: process.env.NODE_ENV === 'development' ? error.message : 'Đã xảy ra lỗi máy chủ.',
+  const details = [error?.code, error?.message, error?.detail, error?.hint].filter(Boolean).join(' | ');
+  console.error(details || error || 'Lỗi máy chủ không xác định.');
+  res.status(error?.message === 'Origin không được phép truy cập API.' ? 403 : 500).json({
+    message: process.env.NODE_ENV === 'development'
+      ? details || 'Lỗi máy chủ không xác định.'
+      : 'Đã xảy ra lỗi máy chủ.',
   });
 });
 
