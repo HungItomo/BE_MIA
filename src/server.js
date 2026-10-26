@@ -41,22 +41,30 @@ let server;
 let databaseRetryTimer;
 
 const app = express();
-const allowedOrigins = [
+const normalizeOrigin = (value) => String(value || '').trim().replace(/\/+$/, '');
+const allowedOrigins = new Set([
   process.env.FE_DOMAIN_DEV,
   process.env.FE_DOMAIN_PROD,
   process.env.CORS_ORIGIN_A,
   process.env.CORS_ORIGIN_B,
   process.env.CORS_ORIGIN_C,
-].filter(Boolean);
+  ...(process.env.CORS_ORIGINS || '').split(','),
+].map(normalizeOrigin).filter(Boolean));
 
-app.use(cors({
+const corsOptions = {
   origin(origin, callback) {
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.has(normalizeOrigin(origin))) {
       return callback(null, true);
     }
     return callback(new Error('Origin không được phép truy cập API.'));
   },
-}));
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
