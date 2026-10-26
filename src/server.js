@@ -35,6 +35,11 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000,
 });
 
+let databaseReady = false;
+let databaseError = null;
+let server;
+let databaseRetryTimer;
+
 const app = express();
 const allowedOrigins = [
   process.env.FE_DOMAIN_DEV,
@@ -56,6 +61,10 @@ app.use(express.json());
 
 const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 const validTime = (value) => typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+
+app.get('/', (_req, res) => {
+  res.json({ status: 'ok', service: 'mia-milk-tracker-api' });
+});
 
 async function initializeDatabase() {
   await pool.query(`
@@ -247,6 +256,17 @@ const sleepReturning = `
 `;
 
 app.get('/api/health', async (_req, res, next) => {
+  if (!databaseReady) {
+    return res.status(503).json({
+      status: 'starting',
+      service: 'mia-milk-tracker-api',
+      database: 'disconnected',
+      message: process.env.NODE_ENV === 'development'
+        ? databaseError?.message || 'Đang kết nối PostgreSQL.'
+        : 'Đang kết nối PostgreSQL.',
+    });
+  }
+
   try {
     await pool.query('SELECT 1');
     res.json({ status: 'ok', service: 'mia-milk-tracker-api', database: 'connected' });
@@ -529,18 +549,38 @@ app.use((error, _req, res, _next) => {
   });
 });
 
-async function start() {
+async function connectDatabase() {
   try {
     await initializeDatabase();
-    app.listen(port, () => {
-      console.log(`MIA Milk Tracker API đang chạy tại http://localhost:${port}`);
-      console.log(`Database: ${databaseUrl ? 'DATABASE_URL' : `${databaseHost}:${databasePort}/${databaseName}`} (SSL: ${databaseSsl ? 'on' : 'off'})`);
-    });
+    databaseReady = true;
+    databaseError = null;
+    console.log(`PostgreSQL đã sẵn sàng: ${databaseUrl ? 'DATABASE_URL' : `${databaseHost}:${databasePort}/${databaseName}`} (SSL: ${databaseSsl ? 'on' : 'off'})`);
   } catch (error) {
+    databaseReady = false;
+    databaseError = error;
     const details = [error.code, error.message, error.detail, error.hint].filter(Boolean).join(' | ');
     console.error('Không thể khởi động API hoặc kết nối PostgreSQL:', details || error);
-    process.exitCode = 1;
+    databaseRetryTimer = setTimeout(connectDatabase, 5000);
   }
 }
+
+function start() {
+  server = app.listen(port, () => {
+    console.log(`MIA Milk Tracker API đang chạy tại http://localhost:${port}`);
+    console.log(`Database target: ${databaseUrl ? 'DATABASE_URL' : `${databaseHost}:${databasePort}/${databaseName}`} (SSL: ${databaseSsl ? 'on' : 'off'})`);
+  });
+  connectDatabase();
+}
+
+async function shutdown(signal) {
+  console.log(`Nhận ${signal}, đang đóng MIA Milk Tracker API...`);
+  clearTimeout(databaseRetryTimer);
+  if (server) await new Promise((resolve) => server.close(resolve));
+  await pool.end();
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 start();
