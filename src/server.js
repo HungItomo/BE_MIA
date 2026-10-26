@@ -12,13 +12,25 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const { Pool } = pg;
 const port = Number(process.env.PORT) || 4000;
+const databaseUrl = process.env.DATABASE_URL || '';
+const databaseHost = process.env.DB_HOST || 'localhost';
+const databasePort = Number(process.env.DB_PORT) || 5432;
+const databaseName = process.env.DB_DATABASE || 'mia';
+const databaseUser = process.env.DB_USERNAME || 'postgres';
+const databaseSsl = String(process.env.DB_SSL || process.env.PGSSLMODE || '').toLowerCase() === 'true'
+  || String(process.env.PGSSLMODE || '').toLowerCase() === 'require';
 
 const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: Number(process.env.DB_PORT) || 5432,
-  user: process.env.DB_USERNAME || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_DATABASE || 'mia',
+  ...(databaseUrl
+    ? { connectionString: databaseUrl }
+    : {
+        host: databaseHost,
+        port: databasePort,
+        user: databaseUser,
+        password: process.env.DB_PASSWORD || '',
+        database: databaseName,
+      }),
+  ...(databaseSsl ? { ssl: { rejectUnauthorized: false } } : {}),
   max: 10,
   connectionTimeoutMillis: 10000,
 });
@@ -522,10 +534,11 @@ async function start() {
     await initializeDatabase();
     app.listen(port, () => {
       console.log(`MIA Milk Tracker API đang chạy tại http://localhost:${port}`);
-      console.log(`Database: ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || 5432}/${process.env.DB_DATABASE || 'mia'}`);
+      console.log(`Database: ${databaseUrl ? 'DATABASE_URL' : `${databaseHost}:${databasePort}/${databaseName}`} (SSL: ${databaseSsl ? 'on' : 'off'})`);
     });
   } catch (error) {
-    console.error('Không thể khởi động API hoặc kết nối PostgreSQL:', error.message);
+    const details = [error.code, error.message, error.detail, error.hint].filter(Boolean).join(' | ');
+    console.error('Không thể khởi động API hoặc kết nối PostgreSQL:', details || error);
     process.exitCode = 1;
   }
 }

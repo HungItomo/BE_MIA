@@ -1,6 +1,8 @@
 # MIA Milk Tracker — Backend
 
-API Express lưu lịch sử uống sữa vào PostgreSQL. Cấu hình kết nối được đọc tự động từ `BE_MIA/.env` qua các biến `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`.
+API Express lưu dữ liệu vào PostgreSQL. Cấu hình được đọc tự động từ `BE_MIA/.env`.
+
+Khi deploy Render, ưu tiên đặt biến `DATABASE_URL` bằng Internal Database URL của Render. Nếu không có `DATABASE_URL`, backend dùng nhóm biến `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`. Không dùng `DB_HOST=localhost` cho PostgreSQL chạy ở máy local khi deploy lên Render.
 
 ## Chạy local
 
